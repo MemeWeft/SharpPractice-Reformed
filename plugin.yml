@@ -1,4 +1,0 @@
-name: SharpPractice-Reformed
-main: me.memeweft.sharppvp.practice.SharpPractice
-version: 0.1
-depend: [ProtocolLib]
