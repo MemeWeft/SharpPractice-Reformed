@@ -1,0 +1,117 @@
+package me.memeweft.sharppvp.practice.game.match;
+
+import java.util.HashMap;
+
+import org.bukkit.Bukkit;
+import org.bukkit.ChatColor;
+import org.bukkit.entity.Player;
+import org.bukkit.event.EventHandler;
+import org.bukkit.event.Listener;
+import org.bukkit.event.inventory.InventoryCloseEvent;
+import org.bukkit.plugin.Plugin;
+
+import me.memeweft.sharppvp.practice.SharpPractice;
+import me.memeweft.sharppvp.practice.command.Command;
+import me.memeweft.sharppvp.practice.command.CommandArgs;
+import me.memeweft.sharppvp.practice.game.gametype.GameType;
+import me.memeweft.sharppvp.practice.util.IconMenu;
+import me.memeweft.sharppvp.practice.util.JsonBuilder;
+
+public class DuelManager implements Listener
+{
+    private SharpPractice plugin;
+    private IconMenu duelMenu;
+    private HashMap<Player, Player> pickingGameMode;
+    private HashMap<Player, Player> awaitingReply;
+    private HashMap<Player, GameType> waitingForReply;
+    
+    public DuelManager(final SharpPractice plugin) {
+        this.plugin = plugin;
+        this.plugin.getCmdFramework().registerCommands(this);
+        Bukkit.getPluginManager().registerEvents((Listener)this, (Plugin)this.plugin);
+        this.pickingGameMode = new HashMap<Player, Player>();
+        this.awaitingReply = new HashMap<Player, Player>();
+        this.waitingForReply = new HashMap<Player, GameType>();
+        this.setupMenu();
+    }
+    
+    private void intiateDuel(final Player ply, final Player target, final GameType gt) {
+        this.awaitingReply.put(ply, target);
+        final JsonBuilder builder = new JsonBuilder(new String[] { "" });
+        builder.withText(ply.getName()).withColor(ChatColor.GREEN).withClickEvent(JsonBuilder.ClickAction.RUN_COMMAND, "/accept " + ply.getName()).withText(" has requested to duel you with ").withColor(ChatColor.YELLOW).withClickEvent(JsonBuilder.ClickAction.RUN_COMMAND, "/accept " + ply.getName()).withText(ChatColor.translateAlternateColorCodes('&', gt.getDisplayName())).withClickEvent(JsonBuilder.ClickAction.RUN_COMMAND, "/accept " + ply.getName()).withText("! Click this message to accept.").withClickEvent(JsonBuilder.ClickAction.RUN_COMMAND, "/accept " + ply.getName()).withColor(ChatColor.YELLOW);
+        builder.sendJson(target);
+        this.waitingForReply.put(ply, gt);
+    }
+    
+    private void startDuel(final Player ply, final Player target) {
+        ply.sendMessage(ChatColor.YELLOW + "Duel starting with " + ChatColor.GREEN + target.getName());
+        target.sendMessage(ChatColor.YELLOW + "Duel starting with " + ChatColor.GREEN + ply.getName());
+        this.plugin.getMatchManager().startMatch(ply, target, this.waitingForReply.get(ply), false);
+        this.waitingForReply.remove(ply);
+    }
+    
+    @Command(name = "accept", inGameOnly = true)
+    public void accept(final CommandArgs args) {
+        final Player ply = args.getPlayer();
+        if (args.getArgs().length < 1) {
+            return;
+        }
+        final Player target = Bukkit.getPlayer(args.getArgs(0));
+        if (target == null || !target.isOnline()) {
+            ply.sendMessage(ChatColor.RED + "Unknown player!");
+            return;
+        }
+        if (!this.awaitingReply.containsKey(target) || this.awaitingReply.get(target) != ply) {
+            ply.sendMessage(ChatColor.RED + "That duel isn't available!");
+            return;
+        }
+        this.awaitingReply.remove(target);
+        this.startDuel(target, ply);
+    }
+    
+    public void setupMenu() {
+        final GameType gt;
+        Player ply;
+        Player target;
+        this.duelMenu = new IconMenu("Select PvP Style", 27, event -> {
+            gt = this.plugin.getGameTypeManager().getGameTypes().get(event.getPosition());
+            if (gt == null) {
+                return;
+            }
+            else {
+                ply = event.getPlayer();
+                target = this.pickingGameMode.get(ply);
+                this.pickingGameMode.remove(ply);
+                this.intiateDuel(ply, target, gt);
+                ply.sendMessage(ChatColor.YELLOW + "Sent duel request to " + ChatColor.GREEN + target.getName() + ChatColor.YELLOW + " with " + ChatColor.translateAlternateColorCodes('&', gt.getDisplayName()));
+                return;
+            }
+        }, (Plugin)this.plugin);
+        for (final GameType gt2 : this.plugin.getGameTypeManager().getGameTypes()) {
+            this.duelMenu.setOption(this.plugin.getGameTypeManager().getGameTypes().indexOf(gt2), gt2.getDisplay(), ChatColor.translateAlternateColorCodes('&', gt2.getDisplayName()), new String[0]);
+        }
+    }
+    
+    @Command(name = "duel", inGameOnly = true, usage = "/duel [player]")
+    public void onDuel(final CommandArgs args) {
+        final Player ply = args.getPlayer();
+        if (args.getArgs().length < 1) {
+            ply.sendMessage(args.getCommand().getUsage());
+            return;
+        }
+        final Player target = Bukkit.getPlayer(args.getArgs(0));
+        if (target == null || !target.isOnline()) {
+            ply.sendMessage(ChatColor.RED + "Unknown player!");
+            return;
+        }
+        this.duelMenu.open(ply);
+        this.pickingGameMode.put(ply, target);
+    }
+    
+    @EventHandler
+    public void onInvClose(final InventoryCloseEvent event) {
+        if (event.getInventory().getName().equals("Select PvP Style") && this.pickingGameMode.containsKey(event.getPlayer())) {
+            this.pickingGameMode.remove(event.getPlayer());
+        }
+    }
+}
